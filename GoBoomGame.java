@@ -1,342 +1,333 @@
+import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 
-enum CardSuit {
-    clubs("c"),
-    diamonds("d"),
-    hearts("h"),
-    spades("s");
-
-    private final String symbol;
-
-    CardSuit(String symbol) {
-        this.symbol = symbol;
-    }
-
-    public String getSymbol() {
-        return symbol;
-    }
-}
-
-enum CardRank {
-    ace("A"),
-    two("2"),
-    three("3"),
-    four("4"),
-    five("5"),
-    six("6"),
-    seven("7"),
-    eight("8"),
-    nine("9"),
-    ten("10"),
-    jack("J"),
-    queen("Q"),
-    king("K");
-
-    private final String symbol;
-
-    CardRank(String symbol) {
-        this.symbol = symbol;
-    }
-
-    public String getSymbol() {
-        return symbol;
-    }
-}
-
-class Card {
-    private final CardRank rank;
-    private final CardSuit suit;
-
-    public Card(CardRank rank, CardSuit suit) {
-        this.rank = rank;
-        this.suit = suit;
-    }
-
-    public CardRank getRank() {
-        return rank;
-    }
-
-    public CardSuit getSuit() {
-        return suit;
-    }
-
-    public static Card fromString(String cardString) {
-        if (cardString.length() != 2) {
-            throw new IllegalArgumentException("Invalid card format. Please enter a valid card (e.g., s3, dQ, hA).");
-        }
-
-        String rankSymbol = cardString.substring(1);
-        String suitSymbol = cardString.substring(0, 1);
-
-        CardRank rank = null;
-        CardSuit suit = null;
-
-        for (CardRank cardRank : CardRank.values()) {
-            if (cardRank.getSymbol().equalsIgnoreCase(rankSymbol)) {
-                rank = cardRank;
-                break;
-            }
-        }
-
-        for (CardSuit cardSuit : CardSuit.values()) {
-            if (cardSuit.getSymbol().equalsIgnoreCase(suitSymbol)) {
-                suit = cardSuit;
-                break;
-            }
-        }
-
-        if (rank == null || suit == null) {
-            throw new IllegalArgumentException("Invalid card format. Please enter a valid card (e.g., s3, dQ, hA).");
-        }
-
-        return new Card(rank, suit);
-    }
-
-    @Override
-    public String toString() {
-        return suit.getSymbol() + rank.getSymbol();
-    }
-}
-
-class Player {
-    private final int playerIndex;
-    private List<Card> hand;
-    private List<List<Card>> tricks;
-
-    public Player(int playerIndex) {
-        this.playerIndex = playerIndex;
-        this.hand = new ArrayList<>();
-        this.tricks = new ArrayList<>();
-    }
-
-    public int getPlayerIndex() {
-        return playerIndex;
-    }
-
-    public List<Card> getHand() {
-        return hand;
-    }
-
-    public void addCard(Card card) {
-        hand.add(card);
-    }
-
-    public Card playCard(Card card) {
-        if (hand.contains(card)) {
-            hand.remove(card);
-            return card;
-        }
-        return null;
-    }
-
-    public void addTrick(List<Card> trick) {
-        tricks.add(trick);
-    }
-
-    public int getTrickCount() {
-        return tricks.size();
-    }
-}
-
 public class GoBoomGame {
-    private Player[] players;
-    private List<Card> deck;
-    private List<Card> centerCards;
+    private static final String[] RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"};
+    private static final String[] SUITS = {"c", "d", "h", "s"};
+    private static final String[] PLAYERS = {"Player1", "Player2", "Player3", "Player4"};
+
+    private List<String> deck;
+    private List<String>[] playerHands;
+    private List<String> centerCards;
+    private int[] playerScores;
     private int currentPlayerIndex;
-    private boolean gameRunning;
+    private String leadCard;
+    private int trickNumber;
 
     public GoBoomGame() {
-        players = new Player[4];
         deck = new ArrayList<>();
-        centerCards = new ArrayList<>();
-        currentPlayerIndex = -1;
-        gameRunning = true;
-    }
-
-    public void playGame() {
-        Scanner scanner = new Scanner(System.in);
-        
-        System.out.println("s = Start a new game.");
-        System.out.println("x = Exit the game.");
-        System.out.println("d = Draw cards from deck until a playable card is obtained. ");
-        System.out.println("    If the deck is empty, skip to the next player.");
-        System.out.println("Input command below:");
-        while (gameRunning) {
-            String input = scanner.nextLine().trim();
-
-            if (input.equals("s")) {
-                startNewGame();
-                printGameStatus();
-            } else if (input.equals("x")) {
-                exitGame();
-            } else if (input.equals("d")) {
-                drawCard();
-            } else {
-                playCard(input);
-            }
-        }
-        scanner.close();
-    }
-
-    private void startNewGame() {
-        deck.clear();
-        centerCards.clear();
-
-        for (CardSuit suit : CardSuit.values()) {
-            for (CardRank rank : CardRank.values()) {
-                deck.add(new Card(rank, suit));
-            }
-        }
-
-        Collections.shuffle(deck);
-
+        playerHands = new List[4];
         for (int i = 0; i < 4; i++) {
-            players[i] = new Player(i);
+            playerHands[i] = new ArrayList<>();
+        }
+        centerCards = new ArrayList<>();
+        playerScores = new int[4];
+        currentPlayerIndex = 0;
+        leadCard = "";
+        trickNumber = 1;
+    }
+
+    public void startGame() {
+        System.out.println("Go Boom Game");
+
+        // Check if a saved game file exists
+        if (isSavedGameAvailable()) {
+            System.out.println("Saved game found. Do you want to resume? (y/n)");
+            Scanner scanner = new Scanner(System.in);
+            String response = scanner.nextLine().trim().toLowerCase();
+
+            if (response.equals("y") || response.equals("yes")) {
+                loadSavedGame();
+                printGameState();
+                gameLoop();
+                return;
+            }
         }
 
-        Card firstLeadCard = deck.remove(deck.size() - 1);
-        centerCards.add(firstLeadCard);
-        determineFirstPlayer(firstLeadCard);
+        // Generate and shuffle the deck
+        generateDeck();
+        shuffleDeck();
+
+        // Deal 7 cards to each player
         dealCards();
+
+        // Determine the lead card and first player
+        determineFirstPlayer();
+
+        // Print the initial game state
+        printGameState();
+
+        // Start the game loop
+        gameLoop();
     }
 
-    private void exitGame() {
-        gameRunning = false;
-    }
-
-    private void determineFirstPlayer(Card firstLeadCard) {
-        CardRank leadRank = firstLeadCard.getRank();
-
-        if (leadRank == CardRank.ace || leadRank == CardRank.five || leadRank == CardRank.nine ||
-                leadRank == CardRank.king) {
-            currentPlayerIndex = 0;
-        } else if (leadRank == CardRank.two || leadRank == CardRank.six || leadRank == CardRank.ten) {
-            currentPlayerIndex = 1;
-        } else if (leadRank == CardRank.three || leadRank == CardRank.seven || leadRank == CardRank.jack) {
-            currentPlayerIndex = 2;
-        } else if (leadRank == CardRank.four || leadRank == CardRank.eight || leadRank == CardRank.queen) {
-            currentPlayerIndex = 3;
+    private void generateDeck() {
+        deck.clear();
+        for (String suit : SUITS) {
+            for (String rank : RANKS) {
+                deck.add(suit + rank);
+            }
         }
+    }
+
+    private void shuffleDeck() {
+        Collections.shuffle(deck);
     }
 
     private void dealCards() {
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 7; j++) {
-                Card card = deck.remove(deck.size() - 1);
-                players[i].addCard(card);
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 4; j++) {
+                playerHands[j].add(deck.remove(0));
             }
         }
     }
 
-    private void printGameStatus() {
-        System.out.println("Trick #" + (centerCards.size() / 4 + 1));
+    private void determineFirstPlayer() {
+        String firstLeadCard = deck.remove(0);
+        centerCards.add(firstLeadCard);
+        System.out.println("The first lead card " + firstLeadCard + " is placed at the center.");
+
+        char suit = firstLeadCard.charAt(0);
+        char rank = firstLeadCard.charAt(1);
+
+        if (rank == 'A' || rank == '5' || rank == '9' || rank == 'K') {
+            currentPlayerIndex = 0;
+        } else if (rank == '2' || rank == '6' || rank == 'X') {
+            currentPlayerIndex = 1;
+        } else if (rank == '3' || rank == '7' || rank == 'J') {
+            currentPlayerIndex = 2;
+        } else if (rank == '4' || rank == '8' || rank == 'Q') {
+            currentPlayerIndex = 3;
+        }
+
+        System.out.println("The first player is " + PLAYERS[currentPlayerIndex] + ".");
+    }
+
+    private void printGameState() {
+        System.out.println("\n--- Game State ---");
+        System.out.println("Trick Number: " + trickNumber);
+        System.out.println("Current Player: " + PLAYERS[currentPlayerIndex]);
+        System.out.println("Player Scores: " + Arrays.toString(playerScores));
+
+        System.out.println("\nPlayer Hands:");
         for (int i = 0; i < 4; i++) {
-            System.out.print("Player" + (i + 1) + ": ");
-            List<Card> hand = players[i].getHand();
-            for (Card card : hand) {
-                System.out.print("[" + card + "] ");
+            System.out.println(PLAYERS[i] + ": " + playerHands[i]);
+        }
+
+        System.out.println("\nCenter Cards: " + centerCards);
+
+        displayDeck(); // Display the deck
+    }
+
+    private void displayDeck() {
+        System.out.println("Deck: " + deck);
+    }
+
+    private void gameLoop() {
+        Scanner scanner = new Scanner(System.in);
+        String command;
+        boolean gameFinished = false;
+
+        while (!gameFinished) {
+            command = scanner.nextLine().trim();
+
+            switch (command) {
+                case "s":
+                    saveGame();
+                    System.out.println("Game saved.");
+                    break;
+                case "x":
+                    gameFinished = true;
+                    deleteSavedGame();
+                    break;
+                case "d":
+                    drawCard();
+                    break;
+                case "r":
+                    resetGame();
+                    break;
+                default:
+                    playCard(command);
+                    break;
             }
-            System.out.println();
+
+            if (deck.isEmpty()) {
+                System.out.println("The deck is empty. Skipping to the next player.");
+                currentPlayerIndex = (currentPlayerIndex + 1) % 4;
+            }
+
+            printGameState();
+
+            if (isGameOver()) {
+                gameFinished = true;
+                System.out.println("Game over!");
+                displayPlayerScores();
+                deleteSavedGame();
+            }
         }
-        System.out.print("Center : ");
-        for (Card card : centerCards) {
-            System.out.print("[" + card + "] ");
-        }
-        System.out.println();
-        System.out.print("Deck : ");
-        for (Card card : deck) {
-            System.out.print("[" + card + "] ");
-        }
-        System.out.println();
-        System.out.print("Score: ");
-        for (int i = 0; i < 4; i++) {
-            System.out.print("Player" + (i + 1) + " = " + players[i].getTrickCount() + " | ");
-        }
-        System.out.println();
-        System.out.println("Turn : Player" + (currentPlayerIndex + 1));
-        System.out.print("> ");
     }
 
     private void drawCard() {
-        if (!deck.isEmpty()) {
-            Card card = deck.remove(deck.size() - 1);
-            players[currentPlayerIndex].addCard(card);
-            System.out.println("Player" + (currentPlayerIndex + 1) + " drew a card: " + card);
-        } else {
-            System.out.println("The deck is empty. Skipping to the next player.");
+        if (deck.isEmpty()) {
+            System.out.println("The deck is empty. Cannot draw a card.");
+            return;
         }
-        nextTurn();
+
+        String drawnCard = deck.remove(0);
+        playerHands[currentPlayerIndex].add(drawnCard);
+        System.out.println(PLAYERS[currentPlayerIndex] + " drew a card: " + drawnCard);
+        currentPlayerIndex = (currentPlayerIndex + 1) % 4;
     }
 
-    private void playCard(String cardString) {
-        Card card = Card.fromString(cardString);
-        Player currentPlayer = players[currentPlayerIndex];
-        if (currentPlayer.getHand().contains(card)) {
-            centerCards.add(card);
-            currentPlayer.playCard(card);
-            System.out.println("Player" + (currentPlayerIndex + 1) + " played " + card);
-            if (centerCards.size() % 4 == 0) {
-                determineTrickWinner();
-                centerCards.clear();
-                if (isGameOver()) {
-                    endGame();
-                    return;
-                }
-            }
-            nextTurn();
-        } else {
-            System.out.println("Player" + (currentPlayerIndex + 1) + " doesn't have that card. Try again.");
-            System.out.print("> ");
+    private void playCard(String card) {
+        if (!playerHands[currentPlayerIndex].contains(card)) {
+            System.out.println("Invalid card. Please try again.");
+            return;
+        }
+
+        playerHands[currentPlayerIndex].remove(card);
+        centerCards.add(card);
+        currentPlayerIndex = (currentPlayerIndex + 1) % 4;
+        System.out.println(PLAYERS[currentPlayerIndex] + " played a card: " + card);
+
+        if (centerCards.size() == 4) {
+            determineTrickWinner();
+            centerCards.clear();
+            trickNumber++;
         }
     }
 
     private void determineTrickWinner() {
-        CardSuit leadSuit = centerCards.get(0).getSuit();
-        Card highestCard = null;
-        int highestPlayerIndex = -1;
-    
-        for (int i = 0; i < 4; i++) {
-            Card card = centerCards.get(i);
-            if (card.getSuit() == leadSuit && (highestCard == null || card.getRank().ordinal() > highestCard.getRank().ordinal())) {
-                highestCard = card;
-                highestPlayerIndex = i;
+        String winningCard = centerCards.get(0);
+        char winningSuit = winningCard.charAt(0);
+        char winningRank = winningCard.charAt(1);
+        int winningPlayerIndex = 0;
+
+        for (int i = 1; i < 4; i++) {
+            String card = centerCards.get(i);
+            char suit = card.charAt(0);
+            char rank = card.charAt(1);
+
+            if (suit == winningSuit && rank > winningRank) {
+                winningCard = card;
+                winningSuit = suit;
+                winningRank = rank;
+                winningPlayerIndex = i;
             }
         }
-    
-        Player trickWinner = players[(currentPlayerIndex + highestPlayerIndex + 1) % 4];
-        trickWinner.addTrick(centerCards);
-        System.out.println("*** Player" + (trickWinner.getPlayerIndex() + 1) + " wins Trick #" + (centerCards.size() / 4) + " ***");
-    }
-    
 
-    private void nextTurn() {
-        currentPlayerIndex = (currentPlayerIndex + 1) % 4;
-        printGameStatus();
+        currentPlayerIndex = (currentPlayerIndex + winningPlayerIndex) % 4;
+        System.out.println(PLAYERS[currentPlayerIndex] + " won the trick with the card " + winningCard);
+        playerScores[currentPlayerIndex]++;
     }
 
     private boolean isGameOver() {
-        for (Player player : players) {
-            if (player.getHand().isEmpty()) {
+        for (int score : playerScores) {
+            if (score >= 10) {
                 return true;
             }
         }
         return false;
     }
 
-    private void endGame() {
-        System.out.println("Game Over");
-        System.out.println("Final Scores:");
+    private void displayPlayerScores() {
+        System.out.println("Player Scores:");
         for (int i = 0; i < 4; i++) {
-            System.out.println("Player" + (i + 1) + ": " + players[i].getTrickCount());
+            System.out.println(PLAYERS[i] + ": " + playerScores[i]);
         }
-        exitGame();
+    }
+
+    private boolean isSavedGameAvailable() {
+        File file = new File("saved_game.txt");
+        return file.exists();
+    }
+
+    private void saveGame() {
+        try {
+            FileWriter writer = new FileWriter("saved_game.txt");
+            writer.write(Integer.toString(currentPlayerIndex) + "\n");
+            writer.write(Integer.toString(trickNumber) + "\n");
+
+            for (List<String> hand : playerHands) {
+                for (String card : hand) {
+                    writer.write(card + " ");
+                }
+                writer.write("\n");
+            }
+
+            for (String card : centerCards) {
+                writer.write(card + " ");
+            }
+            writer.write("\n");
+
+            for (int score : playerScores) {
+                writer.write(Integer.toString(score) + " ");
+            }
+            writer.write("\n");
+
+            writer.close();
+        } catch (IOException e) {
+            System.out.println("An error occurred while saving the game.");
+        }
+    }
+
+    private void loadSavedGame() {
+        try {
+            FileReader reader = new FileReader("saved_game.txt");
+            BufferedReader bufferedReader = new BufferedReader(reader);
+
+            currentPlayerIndex = Integer.parseInt(bufferedReader.readLine());
+            trickNumber = Integer.parseInt(bufferedReader.readLine());
+
+            for (int i = 0; i < 4; i++) {
+                String[] cards = bufferedReader.readLine().trim().split(" ");
+                playerHands[i].clear();
+                playerHands[i].addAll(Arrays.asList(cards));
+            }
+
+            String[] cards = bufferedReader.readLine().trim().split(" ");
+            centerCards.clear();
+            centerCards.addAll(Arrays.asList(cards));
+
+            String[] scores = bufferedReader.readLine().trim().split(" ");
+            for (int i = 0; i < 4; i++) {
+                playerScores[i] = Integer.parseInt(scores[i]);
+            }
+
+            bufferedReader.close();
+            reader.close();
+        } catch (IOException e) {
+            System.out.println("An error occurred while loading the saved game.");
+        }
+    }
+
+    private void deleteSavedGame() {
+        File file = new File("saved_game.txt");
+        file.delete();
+    }
+
+    private void resetGame() {
+        currentPlayerIndex = 0;
+        trickNumber = 1;
+        playerScores = new int[4];
+        deck.clear();
+        for (List<String> hand : playerHands) {
+            hand.clear();
+        }
+        centerCards.clear();
+        generateDeck();
+        shuffleDeck();
+        dealCards();
+        determineFirstPlayer();
+        printGameState();
     }
 
     public static void main(String[] args) {
         GoBoomGame game = new GoBoomGame();
-        game.playGame();
+        game.startGame();
     }
 }
